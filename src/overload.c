@@ -1,12 +1,10 @@
-#include<stdio.h>
-#include<string.h>
-#include<netdb.h>
-
-#define __USE_GNU
-#include <dlfcn.h>
+#include "overload.h"
+#include "utils.h"
 
 static void* (*real_gethostbyname)(const char*)=NULL;
 static int (*real_getaddrinfo)(const char* node, const char *service, const struct addrinfo *hints, struct addrinfo **res)=NULL;
+
+static MDB_env *env;
 
 static void __gethostbyname_init(void) {
   real_gethostbyname = dlsym(RTLD_NEXT, "gethostbyname");
@@ -14,6 +12,8 @@ static void __gethostbyname_init(void) {
     fprintf(stderr, "[overload:gethostbyname:dlsym] Error in dlsym : %s\n", dlerror());
     return;
   }
+
+  slb_db_open(&env, "/var/tmp/slb");
 }
 
 static void __getaddrinfo_init(void) {
@@ -26,25 +26,38 @@ static void __getaddrinfo_init(void) {
 
 
 struct hostent *gethostbyname(const char *name) {
-  if(NULL == real_gethostbyname) {
+  if(NULL == real_gethostbyname)
     __gethostbyname_init();
-  }
 
-  void * p = NULL;
-  /*  struct hostent *response = (struct hostent*)malloc(sizeof struct hostent);
-  response->h_name = "www.google.com";
-  response->h_aliases = { "google", NULL };
-  response->h_addrtype = AF_INET;
-  response->h_length = strlen("1.1.1.1");
-  response->h_addr = {'1.1.1.1', NULL};
-  if(strncmp(name, "www.google.com", strlen("www.google.com") == 0)) {
-      return response;
-  }
-  free(response);
-  */
-
+  struct hostent *p;
+  Buffer *b = NULL;
+  void *value = malloc(MAXDATASIZE);
+  bzero(value, MAXDATASIZE);
   fprintf(stderr, "[overload:gethostbyname] Looking up %s\n", name);
-  p = real_gethostbyname(name);
+
+  switch(slb_db_read(&env, (char*)name, &value)) {
+    case -1:
+      fprintf(stderr, "error\n");
+      break;
+    case 0:
+      b = deserialize_void(value);
+      p = deserialize_hostent(b);
+      break;
+    case 1:
+      p = real_gethostbyname(name);
+      b = serialize_hostent(p);
+      void* data = serialize_buffer(b);
+      size_t data_sz = b->size + sizeof(int);
+      slb_db_write(&env, (char*)name, data, data_sz);
+      free(data);
+      break;
+    default:
+      // should not get here
+      fprintf(stderr, "[slb_db_read] return code not within known range\n");
+  }
+  print_hostent(p);
+  if(b) free(b);
+  free(value);
   return p;
 }
 

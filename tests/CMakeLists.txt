@@ -1,4 +1,11 @@
+include_directories("../src/utils" "../include")
 add_executable(test_c test.c)
+
+add_executable(serialization serialization.c)
+target_link_libraries(serialization utils)
+
+add_executable(test_db test_db.c)
+target_link_libraries(test_db utils)
 
 file(GLOB TestFiles RELATIVE "${PROJECT_SOURCE_DIR}/tests" "*.js" "*.java")
 
@@ -7,7 +14,7 @@ foreach(TestFile ${TestFiles})
   ${PROJECT_SOURCE_DIR}/tests/${TestFile} tests/${TestFile})
 endforeach(TestFile)
 
-add_custom_target(run_c 
+add_custom_target(run_c
    COMMAND LD_PRELOAD=../src/libgdns.so ./test_c
 )
 
